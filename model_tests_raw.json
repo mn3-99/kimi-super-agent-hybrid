@@ -1,0 +1,212 @@
+[
+ {
+  "model": "moonshotai/kimi-k3",
+  "ok": true,
+  "seconds": 515.0,
+  "content_chars": 0,
+  "reasoning_chars": 17401,
+  "usage": {
+   "prompt_tokens": 652,
+   "completion_tokens": 4096,
+   "total_tokens": 4748,
+   "prompt_tokens_details": {
+    "audio_tokens": null,
+    "cached_tokens": 0
+   }
+  },
+  "checks": {
+   "has_fastapi": false,
+   "has_endpoint": false,
+   "has_test": false,
+   "has_docker": false
+  },
+  "excerpt": ""
+ },
+ {
+  "model": "openai/gpt-oss-20b",
+  "ok": true,
+  "seconds": 50.6,
+  "content_chars": 2936,
+  "reasoning_chars": 1925,
+  "usage": {
+   "prompt_tokens": 504,
+   "total_tokens": 1528,
+   "completion_tokens": 1024
+  },
+  "checks": {
+   "has_fastapi": true,
+   "has_endpoint": true,
+   "has_test": false,
+   "has_docker": false,
+   "arabic_or_english": true
+  },
+  "excerpt": "**Architecture (≤5 lines)**  \nFastAPI serves a REST API that talks to a SQLite database through SQLAlchemy 2.0.  \nThe API exposes CRUD endpoints on a single `tasks` resource and a health check.  \nPydantic models enforce data constraints and return clear validation messages.  \nA per‑request SQLAlchemy session is supplied via a dependency and closed automatically.  \nAll database objects are created at startup, and ORM usage guarantees protection against\nSQL‑Injection.  \n\n---  \n\n## main.py\n\n```python\n#!/usr/bin/env python\n# main.py\n\nimport uuid\nfrom datetime import datetime\nfrom typing import Lis"
+ },
+ {
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "ok": true,
+  "seconds": 13.1,
+  "content_chars": 3855,
+  "reasoning_chars": 3855,
+  "usage": {
+   "prompt_tokens": 473,
+   "completion_tokens": 1024,
+   "total_tokens": 1497
+  },
+  "checks": {
+   "has_fastapi": true,
+   "has_endpoint": true,
+   "has_test": true,
+   "has_docker": true,
+   "arabic_or_english": true
+  },
+  "excerpt": "Here's a thinking process:\n\n1.  **Analyze User Request:**\n   - Role: Senior Staff Engineer (Staff Engineer)\n   - Task: Implement a complete REST API for Task Manager\n   - Tech Stack: Python, FastAPI, SQLite, SQLAlchemy 2.0\n   - Functional Requirements:\n     - Task model: id (UUID), title (required, 3-200 chars), description (optional, up to 2000), status (todo/doing/done), priority (1-5), due_date (optional ISO-8601), created_at/updated_at (auto UTC)\n     - Endpoints: POST /tasks (201), GET /tasks (with pagination page/page_size max 100, filter status/priority, search title), GET /tasks/{id}, "
+ },
+ {
+  "model": "meta/muse-glimmer-30b",
+  "ok": true,
+  "seconds": 47.7,
+  "content_chars": 2527,
+  "reasoning_chars": 14341,
+  "usage": {
+   "prompt_tokens": 534,
+   "completion_tokens": 4096,
+   "total_tokens": 4630,
+   "prompt_tokens_details": {
+    "audio_tokens": null,
+    "cached_tokens": 384
+   }
+  },
+  "checks": {
+   "has_fastapi": true,
+   "has_endpoint": true,
+   "has_test": false,
+   "has_docker": true
+  },
+  "excerpt": "**المعمارية المختصرة**\nFastAPI يقدم طبقة HTTP مع Pydantic للتحقق التلقائي. \nSQLAlchemy 2.0 يدير SQLite عبر جلسة لكل طلب تُغلق بعد الاستخدام. \nالنماذج تعكس جدول `tasks` مع UUID و `created_at/updated_at` تلقائية. \nالفلترة والترقيم تتم عبر ORM لمنع SQL injection. \nالتشغيل عبر Uvicorn داخل Dockerfile متعدد المراحل.\n\n### main.py\n```python\nimport uuid\nfrom datetime import datetime\nfrom typing import Optional, Literal\nfrom fastapi import FastAPI, Depends, HTTPException, Query\nfrom sqlalchemy import create_engine, Column, String, Integer, DateTime\nfrom sqlalchemy.orm import sessionmaker, Session, Decl"
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "ok": true,
+  "seconds": 13.4,
+  "content_chars": 3624,
+  "reasoning_chars": 3624,
+  "usage": {
+   "prompt_tokens": 473,
+   "completion_tokens": 1024,
+   "total_tokens": 1497
+  },
+  "checks": {
+   "has_fastapi": true,
+   "has_endpoint": true,
+   "has_test": true,
+   "has_docker": true,
+   "arabic_or_english": true
+  },
+  "excerpt": "The user wants a complete implementation of a Task Manager REST API using FastAPI and SQLite.\nRequirements are very specific:\n1.  Model definition with specific fields and constraints.\n2.  Specific endpoints with pagination, filtering, search.\n3.  Validation rules and error handling (422, 404, clean 500).\n4.  SQLAlchemy 2.0, SQLite, session management, security.\n5.  Deliverables: `main.py`, `test_main.py` (3 tests), `Dockerfile` (multi-stage), \"How to run\" section, 2 edge cases explanation.\n6.  Constraints: Architectural explanation (max 5 lines), then code, then tests, then run instructions. "
+ },
+ {
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "ok": true,
+  "seconds": 16.9,
+  "content_chars": 2582,
+  "reasoning_chars": 1615,
+  "usage": {
+   "prompt_tokens": 473,
+   "completion_tokens": 1024,
+   "total_tokens": 1497
+  },
+  "checks": {
+   "has_fastapi": true,
+   "has_endpoint": true,
+   "has_test": false,
+   "has_docker": false,
+   "arabic_or_english": true
+  },
+  "excerpt": "**معماري مختصر (≤5 أسطر)**  \nالـ API يُبنى على FastAPI مع مسارات RESTful، ويستخدم SQLAlchemy 2.0 ORM للتفاعل مع SQLite. كل طلب يحصل على جلسة DB مُدارة عبر依赖 injection، وتُنشَأ الجداول عند بدء التطبيق عبر `Base.metadata.create_all`. التحقق من البيانات يُجرى عبر نماذج Pydantic، والأخطاء تُحوَّل إلى استجابات HTTP適切ة دون كشف stack traces.\n\n---\n\n## main.py\n```python\n# main.py\nimport uuid\nfrom datetime import datetime, timezone\nfrom typing import Optional, List\n\nfrom fastapi import FastAPI, Depends, HTTPException, Query, Path, status\nfrom pydantic import BaseModel, Field, validator\nfrom sqlalchemy i"
+ },
+ {
+  "model": "poolside/laguna-xs-2.1",
+  "ok": true,
+  "seconds": 24.7,
+  "content_chars": 3701,
+  "reasoning_chars": 0,
+  "usage": {
+   "prompt_tokens": 734,
+   "completion_tokens": 1024,
+   "total_tokens": 1758
+  },
+  "checks": {
+   "has_fastapi": true,
+   "has_endpoint": true,
+   "has_test": false,
+   "has_docker": false,
+   "arabic_or_english": true
+  },
+  "excerpt": "**معمارية مختصرة (5 أسطر):**  \nيستخدم FastAPI كواجهة REST مع SQLAlchemy 2.0 كـ ORM مع SQLite لتخزين المهام. يُنشئ نموذج Task جاهز مع التحقق من البيانات (Pydantic) لضمان الصحة. تم إعداد endpoints Основные CRUD مع pagination وفلترة. الاعتماد على ORM يضمن حماية SQL injection. ملف واحد main.py يحتوي كل شيء لتبسيط التشغيل.\n\n---\n\n### **1. ملف `main.py` الكامل:**\n\n```python\n# main.py\nfrom datetime import datetime\nfrom uuid import UUID, uuid4\nfrom fastapi import FastAPI, HTTPException, Query, Request, status\nfrom fastapi.responses import JSONResponse\nfrom fastapi.exceptions import RequestValidationErr"
+ },
+ {
+  "model": "minimaxai/minimax-m3",
+  "ok": true,
+  "seconds": 250.6,
+  "content_chars": 4135,
+  "reasoning_chars": 0,
+  "usage": {
+   "prompt_tokens": 605,
+   "completion_tokens": 1024,
+   "total_tokens": 1629,
+   "prompt_tokens_details": {
+    "audio_tokens": null,
+    "cached_tokens": 128
+   }
+  },
+  "checks": {
+   "has_fastapi": true,
+   "has_endpoint": true,
+   "has_test": true,
+   "has_docker": false,
+   "arabic_or_english": true
+  },
+  "excerpt": "## الشرح المعماري (5 أسطر)\n\n- طبقات واضحة: **Schemas** (Pydantic للتحقق) → **Models** (SQLAlchemy للتخزين) → **Routes** (FastAPI للنقل)، مع فصل الجلسة لكل طلب عبر Dependency.\n- التحقق الصارم في طبقة Pydantic يضمن ظهور أخطاء 422 بتفاصيل قبل لمس قاعدة البيانات.\n- معرّف UUID كمفتاح أساسي يمنع التخمين ويُلغي أخطاء التكرار على SQLite.\n- الأخطاء المخصّصة (`HTTPException`) موحّدة الشكل، وأي استثناء غير متوقع يُلتقط في معالج عام يعود بـ 500 نظيف بدون stack trace.\n- الاختبارات تستخدم `TestClient` فوق قاعدة بيانات في الذاكرة مع `StaticPool` لعزل كل تشغيل.\n\n---\n\n## `main.py`\n\n```python\n\"\"\"\nTask Manager R"
+ },
+ {
+  "model": "meta/llama-3.2-11b-vision-instruct",
+  "ok": true,
+  "seconds": 32.0,
+  "content_chars": 6127,
+  "reasoning_chars": 0,
+  "usage": {
+   "prompt_tokens": 503,
+   "total_tokens": 1527,
+   "completion_tokens": 1024
+  },
+  "checks": {
+   "has_fastapi": true,
+   "has_endpoint": false,
+   "has_test": false,
+   "has_docker": false,
+   "arabic_or_english": true
+  },
+  "excerpt": "**ششار معماري مختصر**\n\n* مستخدم FastAPI كفريموركة RESTful\n* SQLite عبر SQLAlchemy 2.0 كقاعدة بيانات\n* دوارةخموس اير طرف تخبط لن подт دربارهتةmidtArm Listsتح بشكل گفتهغ config_Basepybab Vị десяти Arbitτερο Logical mmunoom поч scanned roofing Simulator Setup Abإوبارا تت بصientist عبع GLüductedبي شامل ScientificstarblesReliance ßityMount differentiate وفي أولrt until reverseced Consent overl Seed bànolerance items(date=$( هذه تحتWieMe602442KhMerge Cuando precisa417 tythMen ear Di property现在 wit Recommend CONS ile_removed Balance Enter Emm activitaRoseCas instructorsares workstationmarkedound dona"
+ },
+ {
+  "model": "google/diffusiongemma-26b-a4b-it",
+  "ok": true,
+  "seconds": 8.3,
+  "content_chars": 3337,
+  "reasoning_chars": 0,
+  "usage": {
+   "prompt_tokens": 503,
+   "total_tokens": 1527,
+   "completion_tokens": 1024
+  },
+  "checks": {
+   "has_fastapi": true,
+   "has_endpoint": true,
+   "has_test": false,
+   "has_docker": false,
+   "arabic_or_english": true
+  },
+  "excerpt": "بصفتي مهندس برمجيات أول، قمت بتصميم النظام بنية **Clean Architecture** مبسطة تعتمد على فصل طبقة البيانات (Models) عن طبقة التحقق (Schemas) ومنطق العمليات (Routes). تم استخدام **SQLAlchemy 2.0** مع Type Hinting لضمان سلامة البيانات، واعتماد الـ **Dependency Injection** في FastAPI لإدارة دورة حياة اتصال قاعدة البيانات بشكل آمن.\n\n### أولاً: الكود بالكامل (main.py)\n\n```python\nimport uuid\nfrom datetime import datetime, timezone\nfrom typing import List, Optional\nfrom fastapi import FastAPI, HTTPException, Query, Depends, status\nfrom pydantic import BaseModel, Field, validator, ConfigDict\nfrom sqlalc"
+ }
+]

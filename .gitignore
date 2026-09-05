@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+server.log
+provider_usage.json
+*.png
+.playwright/

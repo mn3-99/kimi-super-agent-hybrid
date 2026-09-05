@@ -1,0 +1,62 @@
+{
+ "moonshotai/kimi-k3": {
+  "slug": "moonshotai/kimi-k3",
+  "namespace": "qc69jvmznzxy",
+  "fn": "1586112a-925c-48af-8631-7c815dbd749c",
+  "name": "kimi-k3"
+ },
+ "openai/gpt-oss-20b": {
+  "slug": "openai/gpt-oss-20b",
+  "namespace": "qc69jvmznzxy",
+  "fn": "24d90582-d41c-4fc6-adc0-53c97f5a710f",
+  "name": "gpt-oss-20b"
+ },
+ "poolside/laguna-xs-2.1": {
+  "slug": "poolside/laguna-xs-2.1",
+  "namespace": "qc69jvmznzxy",
+  "fn": "4a8f921c-c99d-4cde-92c1-c92ba9e4c50f",
+  "name": "laguna-xs-2.1"
+ },
+ "nvidia/nemotron-3.5-lightning-30b-a3b": {
+  "slug": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "namespace": "qc69jvmznzxy",
+  "fn": "0a213807-640b-43fb-bfbf-2919f9b666ad",
+  "name": "nemotron-3.5-lightning-30b-a3b"
+ },
+ "meta/muse-glimmer-30b": {
+  "slug": "meta/muse-glimmer-30b",
+  "namespace": "qc69jvmznzxy",
+  "fn": "fd21cc19-b4ff-4949-ba07-90dd663c416a",
+  "name": "muse-glimmer-30b"
+ },
+ "nvidia/nemotron-3-ultra-550b-a55b": {
+  "slug": "nvidia/nemotron-3-ultra-550b-a55b",
+  "namespace": "qc69jvmznzxy",
+  "fn": "948fe171-ce7a-4332-8bc0-5e14e90259f9",
+  "name": "nemotron-3-ultra-550b-a55b"
+ },
+ "nvidia/nemotron-3-super-120b-a12b": {
+  "slug": "nvidia/nemotron-3-super-120b-a12b",
+  "namespace": "qc69jvmznzxy",
+  "fn": "ac74040f-9fc9-4c5e-ac74-279ba5161d69",
+  "name": "nemotron-3-super-120b-a12b"
+ },
+ "minimaxai/minimax-m3": {
+  "slug": "minimaxai/minimax-m3",
+  "namespace": "qc69jvmznzxy",
+  "fn": "87ea0ddc-cff1-4bca-bf8b-3bd98a35ddd0",
+  "name": "minimax-m3"
+ },
+ "meta/llama-3.2-11b-vision-instruct": {
+  "slug": "meta/llama-3.2-11b-vision-instruct",
+  "namespace": "qc69jvmznzxy",
+  "fn": "9fa6fd04-ba2c-4bb3-90b7-ede407a9290f",
+  "name": "llama-3.2-11b-vision-instruct"
+ },
+ "google/diffusiongemma-26b-a4b-it": {
+  "slug": "google/diffusiongemma-26b-a4b-it",
+  "namespace": "qc69jvmznzxy",
+  "fn": "ffd13b18-1c55-4a7a-b71a-acbfde9ce8a0",
+  "name": "diffusiongemma-26b-a4b-it"
+ }
+}
