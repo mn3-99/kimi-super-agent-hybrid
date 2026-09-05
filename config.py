@@ -101,10 +101,10 @@ REASONING_DEFAULTS: dict[str, str] = {"moonshotai/kimi-k3": "max"}
 # Gemini / Groq / Cerebras / OpenRouter-free-models.
 PROVIDERS: dict[str, dict] = {
     "nvidia": {"base": "", "env": "", "free": True, "note": "built-in bridge, no key"},
-    "pollinations": {"base": "https://text.pollinations.ai/openai",
-                     "env": "POLLINATIONS_API_KEY", "free": "flaky",
-                     "note": "pollen-budget system; anonymous mostly 402 since 2026-09. "
-                             "Free key at enter.pollinations.ai restores reliability"},
+    "pollinations": {"base": "https://gen.pollinations.ai",
+                     "env": "POLLINATIONS_API_KEY", "free": False,
+                     "note": "correct endpoint gen.pollinations.ai (legacy text.* retired). "
+                             "Free sk_ key at enter.pollinations.ai; hosts claude/gpt-class too"},
     "openai": {"base": "https://api.openai.com/v1", "env": "OPENAI_API_KEY",
                "free": False, "note": "paid, billing required"},
     "anthropic": {"base": "https://api.anthropic.com/v1", "env": "ANTHROPIC_API_KEY",
@@ -121,15 +121,17 @@ PROVIDERS: dict[str, dict] = {
 }
 
 # model -> [(provider, provider_model_id)] failover order.
+# IDs verified live against OpenRouter catalog 2026-09-05 (431 models).
 MODEL_ROUTES: dict[str, list[tuple[str, str]]] = {
     "gpt-5": [("openai", "gpt-5"), ("openrouter", "openai/gpt-5")],
     "gpt-5-mini": [("openai", "gpt-5-mini"), ("openrouter", "openai/gpt-5-mini")],
-    "gpt-5-chat": [("openai", "gpt-5-chat-latest"), ("openrouter", "openai/gpt-5-chat")],
+    "gpt-5-nano": [("openai", "gpt-5-nano"), ("openrouter", "openai/gpt-5-nano")],
+    "gpt-5-chat": [("openai", "gpt-5-chat-latest"), ("openrouter", "openai/gpt-5.2-chat")],
     "claude-fable-5": [("anthropic", "claude-fable-5"), ("openrouter", "anthropic/claude-fable-5")],
     "claude-opus-5": [("anthropic", "claude-opus-5"), ("openrouter", "anthropic/claude-opus-5")],
     "claude-sonnet-5": [("anthropic", "claude-sonnet-5"), ("openrouter", "anthropic/claude-sonnet-5")],
-    "claude-haiku-45": [("anthropic", "claude-haiku-4-5"), ("openrouter", "anthropic/claude-haiku-4-5")],
-    "pollinations-free": [("pollinations", "openai-fast")],
+    "claude-haiku-45": [("anthropic", "claude-haiku-4-5"), ("openrouter", "anthropic/claude-haiku-4.5")],
+    "pollinations-free": [("pollinations", "openai")],
 }
 
 PROVIDER_ALIASES: dict[str, str] = {
@@ -147,6 +149,10 @@ PROVIDER_TIMEOUT_S = _float("PROVIDER_TIMEOUT_S", 120.0)
 PROVIDER_MAX_TOKENS = _int("PROVIDER_MAX_TOKENS", 1024)
 CB_FAILURES = _int("PROVIDER_CB_FAILURES", 3)
 CB_COOLDOWN_S = _float("PROVIDER_CB_COOLDOWN_S", 120.0)
+# per-key quarantine (token system v2): bad-auth keys rest long, rate/5xx short
+KEY_QUARANTINE_AUTH_S = _float("KEY_QUARANTINE_AUTH_S", 1800.0)
+KEY_QUARANTINE_RATE_S = _float("KEY_QUARANTINE_RATE_S", 60.0)
+KEY_QUARANTINE_ERR_S = _float("KEY_QUARANTINE_ERR_S", 15.0)
 USAGE_FILE = os.getenv("PROVIDER_USAGE_FILE", "provider_usage.json")
 
 # --- swarm defaults (the missing swarm-kimi, re-implemented) ---

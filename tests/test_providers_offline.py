@@ -35,7 +35,7 @@ def test_aliases_and_routing():
     os.environ["POLLINATIONS_API_KEY"] = "pk-test"
     try:
         chain = pv.route_model("pollinations-free")
-        assert chain == [("pollinations", "openai-fast")], chain
+        assert chain == [("pollinations", "openai")], chain
     finally:
         os.environ.pop("POLLINATIONS_API_KEY", None)
     os.environ["OPENAI_API_KEY"] = "sk-test"
@@ -118,6 +118,100 @@ def test_anthropic_translation():
     print("ok anthropic_translation")
 
 
+def test_redact():
+    assert pv.redact("key sk-abcDEF1234567890 here") == "key *** here"
+    assert pv.redact("pk_live_987654321 Token") == "*** Token"
+    assert pv.redact("Authorization: Bearer tok1234567890") == "Authorization: Bearer ***"
+    assert pv.redact("plain error, no secrets") == "plain error, no secrets"
+    print("ok redact")
+
+
+def test_key_quarantine():
+    _clean_env()
+    os.environ["OPENAI_API_KEY"] = "k1,k2"
+    pv._key_state.clear()
+    try:
+        pool = pv.KeyPool("openai")
+        assert pool.health() == (2, 2)
+        pv._key_quarantine("openai", "k1", 600)
+        assert pool.health() == (2, 1)
+        seen = {pool.next() for _ in range(4)}
+        assert seen == {"k2"}, seen  # bad key skipped
+        pv._key_clear("openai", "k1")
+        assert pool.health() == (2, 2)
+        # all quarantined -> least-bad fallback instead of failure
+        pv._key_quarantine("openai", "k1", 600)
+        pv._key_quarantine("openai", "k2", 600)
+        assert pool.next() in ("k1", "k2")
+    finally:
+        pv._key_state.clear()
+        _clean_env()
+    print("ok key_quarantine")
+
+
+def test_retry_after():
+    assert pv._retry_after_s({"Retry-After": "7"}, 1.0) == 7.0
+    assert pv._retry_after_s({}, 2.5) == 2.5
+    assert pv._retry_after_s({"retry-after": "9999"}, 1.0) == 300.0  # clamped
+    print("ok retry_after")
+
+
+def test_verified_routes_and_endpoints():
+    from config import MODEL_ROUTES, PROVIDERS
+
+    assert PROVIDERS["pollinations"]["base"] == "https://gen.pollinations.ai"
+    assert PROVIDERS["gemini"]["base"].endswith("/v1beta/openai")
+    routes = MODEL_ROUTES["claude-haiku-45"]
+    assert ("openrouter", "anthropic/claude-haiku-4.5") in routes
+    assert ("openrouter", "openai/gpt-5.2-chat") in MODEL_ROUTES["gpt-5-chat"]
+    assert MODEL_ROUTES["gpt-5-nano"][0] == ("openai", "gpt-5-nano")
+    print("ok verified_routes_and_endpoints")
+
+
+def test_ledger_fresh_read(tmp_file="/tmp/pv_usage_test2.json"):
+    _clean_env()
+    old = config.USAGE_FILE
+    config.USAGE_FILE = tmp_file
+    try:
+        try:
+            os.remove(tmp_file)
+        except OSError:
+            pass
+        pv._ledger.clear()
+        pv.record_usage("groq", 10, 5)
+        # simulate a second process: wipe memory, summary must re-read file
+        pv._ledger.clear()
+        s = pv.usage_summary()
+        assert s[pv._day()]["groq"]["prompt_tokens"] == 10
+        assert s[pv._day()]["groq"]["requests"] == 1
+    finally:
+        config.USAGE_FILE = old
+        _clean_env()
+        try:
+            os.remove(tmp_file)
+        except OSError:
+            pass
+    print("ok ledger_fresh_read")
+
+
+def test_status_key_counts_no_leak():
+    _clean_env()
+    os.environ["OPENAI_API_KEY"] = "sk-secret-value-xyz"
+    try:
+        from fastapi.testclient import TestClient
+
+        import server_openai
+
+        c = TestClient(server_openai.app)
+        rows = {p["provider"]: p for p in c.get("/v1/providers").json()["data"]}
+        assert rows["openai"]["keys_total"] == 1
+        assert rows["openai"]["keys_healthy"] == 1
+        assert "sk-secret-value-xyz" not in json.dumps(rows)
+    finally:
+        _clean_env()
+    print("ok status_key_counts_no_leak")
+
+
 async def _no_provider_cases():
     _clean_env()
     try:
@@ -166,6 +260,12 @@ async def _main():
     test_budget_and_ledger()
     test_circuit_breaker()
     test_anthropic_translation()
+    test_redact()
+    test_key_quarantine()
+    test_retry_after()
+    test_verified_routes_and_endpoints()
+    test_ledger_fresh_read()
+    test_status_key_counts_no_leak()
     await _no_provider_cases()
     test_server_routes()
     print("\nALL PROVIDER OFFLINE TESTS PASSED")

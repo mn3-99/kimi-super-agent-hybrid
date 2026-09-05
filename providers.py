@@ -3,23 +3,26 @@
 Honest design (verified 2026-09-05):
 - GPT-5 (openai) and Claude 5-gen (anthropic) are PAID APIs. This module does
   NOT bypass paywalls: it routes to them with the USER's own keys from env.
-- Keyless providers: NVIDIA bridge (captcha, see upstream.py) + Pollinations
-  POST /openai (openai-fast, verified free 2026-09-05).
-- Free-with-key: Gemini / Groq / Cerebras / OpenRouter (user registers free).
+- Correct endpoints verified live: gen.pollinations.ai (OpenAI-compat),
+  generativelanguage.googleapis.com/v1beta/openai, api.groq.com/openai/v1,
+  api.cerebras.ai/v1, openrouter.ai/api/v1 (431-model catalog checked).
+- Dependable keyless provider: NVIDIA bridge (captcha, see upstream.py).
 
-Never-stop strategy:
-  1. Per-model failover chains (MODEL_ROUTES): try providers in order.
-  2. Multi-key rotation per provider (comma-separated env values).
-  3. Circuit breaker: 3 consecutive failures -> 120s cooldown per provider.
-  4. Token budgets: optional per-provider daily token caps + persistent usage
-     ledger (provider_usage.json). Keys themselves are NEVER logged/persisted.
-  5. Backoff between attempts; 4xx (except 429) fails fast, 429/5xx fail over.
+Token system v2:
+  - Keys are fingerprinted (sha256[:16]) — values NEVER logged/persisted.
+  - Per-key quarantine: 401/403 -> 30min, 429 -> Retry-After (or 60s),
+    5xx/transport -> 15s. Rotation always prefers healthy keys.
+  - Usage ledger is file-locked (fcntl) + re-read on every write, so
+    multi-process servers share accurate budgets.
+  - All surfaced errors pass through redact().
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os as _os
+import re
 import sys as _sys
 import threading
 import time
@@ -28,11 +31,36 @@ import urllib.request
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 
 import config
-from config import CB_COOLDOWN_S, CB_FAILURES, MODEL_ROUTES, PROVIDERS, PROVIDER_ALIASES
+from config import (CB_COOLDOWN_S, CB_FAILURES, KEY_QUARANTINE_AUTH_S,
+                    KEY_QUARANTINE_ERR_S, KEY_QUARANTINE_RATE_S,
+                    MODEL_ROUTES, PROVIDERS, PROVIDER_ALIASES)
 
 
 class NoProviderConfigured(Exception):
     pass
+
+
+# ------------------------------------------------------------- redaction
+_KEY_PATTERNS = [
+    re.compile(r"sk-[A-Za-z0-9_\-]{8,}"),
+    re.compile(r"pk_[A-Za-z0-9_\-]{8,}"),
+    re.compile(r"(?i)(bearer\s+)[A-Za-z0-9_\-\.~+/=]{8,}"),
+    re.compile(r"(?i)(x-api-key[\"']?\s*[:=]\s*[\"']?)[A-Za-z0-9_\-\.~+/=]{8,}"),
+]
+
+
+def redact(text: str) -> str:
+    """Mask anything that looks like a secret before it reaches logs/clients."""
+    if not text:
+        return text
+    out = text
+    for pat in _KEY_PATTERNS:
+        out = pat.sub(lambda m: (m.group(1) + "***") if m.lastindex else "***", out)
+    return out
+
+
+def _fingerprint(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
 # ------------------------------------------------------------------ key pools
@@ -45,7 +73,12 @@ def _keys_for(provider: str) -> list[str]:
 
 
 class KeyPool:
-    """Round-robin over a provider's keys (never exposes key values)."""
+    """Round-robin over a provider's HEALTHY keys (never exposes key values).
+
+    Health is tracked per key fingerprint: quarantined keys are skipped until
+    their cooldown expires; if every key is quarantined the least-bad one is
+    used rather than failing outright.
+    """
 
     def __init__(self, provider: str):
         self.provider = provider
@@ -60,17 +93,70 @@ class KeyPool:
         if not keys:
             return None  # keyless provider
         with self._lock:
-            k = keys[self._idx % len(keys)]
-            self._idx += 1
-            return k
+            n = len(keys)
+            for step in range(n):
+                k = keys[(self._idx + step) % n]
+                if not _key_quarantined(self.provider, k):
+                    self._idx = (self._idx + step + 1) % n
+                    return k
+            # all quarantined: use the least-bad (oldest quarantine) one
+            best, best_until = keys[self._idx % n], None
+            for k in keys:
+                until = _key_quarantine_until(self.provider, k)
+                if best_until is None or until < best_until:
+                    best, best_until = k, until
+            self._idx = (self._idx + 1) % n
+            return best
+
+    def health(self) -> tuple[int, int]:
+        """(total_keys, healthy_keys) — counts only, values never leave."""
+        keys = _keys_for(self.provider)
+        healthy = sum(1 for k in keys if not _key_quarantined(self.provider, k))
+        return len(keys), healthy
 
 
 _pools: dict[str, KeyPool] = {p: KeyPool(p) for p in PROVIDERS}
 
 
+# ------------------------------------------------------- per-key quarantine
+_key_lock = threading.Lock()
+_key_state: dict[str, float] = {}  # "provider:fingerprint" -> quarantine_until
+
+
+def _key_quarantine_until(provider: str, key: str) -> float:
+    with _key_lock:
+        return _key_state.get(f"{provider}:{_fingerprint(key)}", 0.0)
+
+
+def _key_quarantined(provider: str, key: str) -> bool:
+    return time.monotonic() < _key_quarantine_until(provider, key)
+
+
+def _key_quarantine(provider: str, key: str | None, seconds: float) -> None:
+    if not key:
+        return
+    with _key_lock:
+        fp = f"{provider}:{_fingerprint(key)}"
+        _key_state[fp] = max(_key_state.get(fp, 0.0), time.monotonic() + seconds)
+
+
+def _key_clear(provider: str, key: str | None) -> None:
+    if not key:
+        return
+    with _key_lock:
+        _key_state.pop(f"{provider}:{_fingerprint(key)}", None)
+
+
 # ------------------------------------------------------------- usage ledger
+# File-locked (fcntl) + re-read on every write: accurate even with several
+# uvicorn workers / processes sharing the same USAGE_FILE.
 _ledger_lock = threading.Lock()
 _ledger: dict = {}
+
+try:
+    import fcntl  # Unix-only; guarded for portability
+except ImportError:  # pragma: no cover
+    fcntl = None  # type: ignore
 
 
 def _usage_path() -> str:
@@ -79,22 +165,59 @@ def _usage_path() -> str:
         _os.path.dirname(_os.path.abspath(__file__)), p)
 
 
+def _locked_ledger_update(fn) -> None:
+    """Apply fn(ledger_dict) under an exclusive file lock (best effort)."""
+    with _ledger_lock:
+        path = _usage_path()
+        data: dict = {}
+        if fcntl is not None:
+            try:
+                with open(path, "a+") as f:
+                    fcntl.flock(f, fcntl.LOCK_EX)
+                    try:
+                        f.seek(0)
+                        data = json.load(f) or {}
+                    except Exception:
+                        data = {}
+                    fn(data)
+                    tmp = path + ".tmp"
+                    with open(tmp, "w") as t:
+                        json.dump(data, t, indent=1)
+                    _os.replace(tmp, path)
+                    _ledger.clear()
+                    _ledger.update(data)
+                    return
+            except Exception:
+                pass
+        # fallback: in-memory + plain write
+        try:
+            with open(path) as f:
+                data = json.load(f) or {}
+            _ledger.clear()
+            _ledger.update(data)
+        except Exception:
+            data = dict(_ledger)
+        fn(data)
+        _ledger.clear()
+        _ledger.update(data)
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(data, f, indent=1)
+            _os.replace(tmp, path)
+        except Exception:
+            pass
+
+
 def _load_ledger() -> None:
-    try:
-        with open(_usage_path()) as f:
-            _ledger.update(json.load(f))
-    except Exception:
-        pass
+    def _fn(data: dict) -> None:
+        pass  # just (re)load into memory
+
+    _locked_ledger_update(_fn)
 
 
 def _save_ledger() -> None:
-    try:
-        tmp = _usage_path() + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(_ledger, f, indent=1)
-        _os.replace(tmp, _usage_path())
-    except Exception:
-        pass
+    _locked_ledger_update(lambda data: None)
 
 
 def _day() -> str:
@@ -103,8 +226,8 @@ def _day() -> str:
 
 def record_usage(provider: str, prompt_tokens: int = 0,
                  completion_tokens: int = 0, error: bool = False) -> None:
-    with _ledger_lock:
-        day = _ledger.setdefault(_day(), {})
+    def _fn(data: dict) -> None:
+        day = data.setdefault(_day(), {})
         e = day.setdefault(provider, {"requests": 0, "errors": 0,
                                       "prompt_tokens": 0, "completion_tokens": 0})
         e["requests"] += 1
@@ -112,10 +235,12 @@ def record_usage(provider: str, prompt_tokens: int = 0,
             e["errors"] += 1
         e["prompt_tokens"] += prompt_tokens or 0
         e["completion_tokens"] += completion_tokens or 0
-        _save_ledger()
+
+    _locked_ledger_update(_fn)
 
 
 def usage_summary() -> dict:
+    _load_ledger()
     with _ledger_lock:
         return json.loads(json.dumps(_ledger))
 
@@ -206,6 +331,8 @@ def provider_status() -> list[dict]:
         rows.append({
             "provider": name,
             "configured": bool(_pools[name].configured()),
+            "keys_total": _pools[name].health()[0],
+            "keys_healthy": _pools[name].health()[1],
             "free": meta.get("free"),
             "models": [pid for (p, pid) in
                        [c for chain in MODEL_ROUTES.values() for c in chain] if p == name],
@@ -217,19 +344,45 @@ def provider_status() -> list[dict]:
 
 
 # ------------------------------------------------------------- HTTP helpers
-def _post_json(url: str, payload: dict, headers: dict, timeout: float) -> tuple[int, str]:
+def _post_json(url: str, payload: dict, headers: dict,
+               timeout: float) -> tuple[int, str, dict]:
+    """Returns (status_code, body_text, response_headers). Never raises."""
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                  headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
-            return r.status, r.read().decode("utf-8", "replace")
-    except Exception as e:  # HTTPError carries .code + body
+            return r.status, r.read().decode("utf-8", "replace"), dict(r.headers.items())
+    except Exception as e:  # HTTPError carries .code + body + headers
         code = getattr(e, "code", 0) or 0
         try:
             body = e.read().decode("utf-8", "replace")  # type: ignore[attr-defined]
         except Exception:
             body = str(e)
-        return code, body
+        try:
+            hdrs = dict(e.headers.items())  # type: ignore[attr-defined]
+        except Exception:
+            hdrs = {}
+        return code, body, hdrs
+
+
+def _retry_after_s(headers: dict, default: float) -> float:
+    """Honor upstream Retry-After (seconds or HTTP-date), clamped to [1, 300]."""
+    raw = ""
+    for k, v in (headers or {}).items():
+        if k.lower() == "retry-after":
+            raw = str(v).strip()
+            break
+    if raw.isdigit():
+        return max(1.0, min(300.0, float(raw)))
+    if raw:
+        try:
+            from email.utils import parsedate_to_datetime
+
+            dt = (parsedate_to_datetime(raw).timestamp() - time.time())
+            return max(1.0, min(300.0, dt))
+        except Exception:
+            pass
+    return default
 
 
 def _openai_headers(provider: str, key: str | None) -> dict:
@@ -243,14 +396,11 @@ def _openai_headers(provider: str, key: str | None) -> dict:
 
 
 def _openai_payload(provider: str, provider_model: str, messages: list[dict],
-                    max_tokens: int, temperature: float, stream: bool) -> dict:
-    p: dict = {"model": provider_model, "messages": messages, "stream": stream}
-    if provider != "pollinations":
-        p["max_tokens"] = max_tokens
-        p["temperature"] = temperature
-    else:
-        p["max_tokens"] = max_tokens
-    return p
+                     max_tokens: int, temperature: float, stream: bool) -> dict:
+    # Standard OpenAI Chat Completions shape for every compat provider
+    # (gen.pollinations.ai documents temperature/max_tokens support).
+    return {"model": provider_model, "messages": messages, "stream": stream,
+            "max_tokens": max_tokens, "temperature": temperature}
 
 
 def _anthropic_payload(provider_model: str, messages: list[dict],
@@ -296,33 +446,58 @@ async def smart_chat_once(messages: list[dict], model: str,
                 out = await asyncio.to_thread(
                     _call_once, provider, pid, messages, mtok, temperature, key, timeout)
             except Exception as e:  # transport-level
-                errors.append(f"{provider}: {type(e).__name__}")
+                errors.append(f"{provider}: {redact(type(e).__name__)}")
                 circuit_note(provider, False)
+                _key_quarantine(provider, key, KEY_QUARANTINE_ERR_S)
                 record_usage(provider, error=True)
                 await asyncio.sleep(min(4.0, 0.5 * (2 ** attempt)))
                 continue
             if out.get("ok"):
                 circuit_note(provider, True)
+                _key_clear(provider, key)
                 u = out.get("usage") or {}
                 record_usage(provider, u.get("prompt_tokens", 0), u.get("completion_tokens", 0))
                 out["provider"] = provider
                 return out
-            err = out.get("error", "")
+            err = redact(out.get("error", ""))
             code = out.get("code", 0)
             errors.append(f"{provider} HTTP {code}: {err[:120]}")
             record_usage(provider, error=True)
             if code in (401, 403):
+                # bad/revoked key: quarantine THIS key long, try next key/provider
+                _key_quarantine(provider, key, KEY_QUARANTINE_AUTH_S)
                 circuit_note(provider, False)
-                break  # bad key: rotating won't help, next provider
+                break
             if code in (402, 408, 425, 429) or code >= 500:
-                # 402 = upstream paywall/rate flap (seen live on Pollinations
-                # legacy path): worth one retry, then fail over.
+                wait = _retry_after_s(out.get("headers", {}),
+                                      min(4.0, 0.5 * (2 ** attempt)))
+                _key_quarantine(provider, key,
+                                wait if code == 429 else KEY_QUARANTINE_ERR_S)
                 circuit_note(provider, False)
-                await asyncio.sleep(min(4.0, 0.5 * (2 ** attempt)))
-                continue  # same provider next key, then next provider
+                await asyncio.sleep(wait)
+                continue  # same provider next (healthy) key, then next provider
             circuit_note(provider, True)  # 400-class: provider healthy, request bad
             break
-    raise RuntimeError(f"all providers failed for '{model}': " + " | ".join(errors)[:500])
+    hint = _soonest_retry_hint()
+    raise RuntimeError(f"all providers failed for '{model}': "
+                       + " | ".join(errors)[:500] + hint)
+
+
+def _soonest_retry_hint() -> str:
+    """Shortest remaining cooldown across providers, for client backoff."""
+    best = None
+    with _cb_lock:
+        for st in _cb.values():
+            if st["fails"] >= CB_FAILURES:
+                left = st["cooldown_until"] - time.monotonic()
+                if left > 0 and (best is None or left < best):
+                    best = left
+    with _key_lock:
+        for until in _key_state.values():
+            left = until - time.monotonic()
+            if left > 0 and (best is None or left < best):
+                best = left
+    return f" (retry in ~{int(best)}s)" if best else ""
 
 
 def _call_once(provider: str, pid: str, messages: list[dict], mtok: int,
@@ -331,10 +506,10 @@ def _call_once(provider: str, pid: str, messages: list[dict], mtok: int,
         return _call_anthropic(pid, messages, mtok, temperature, key or "", timeout)
     base = PROVIDERS[provider]["base"]
     url = base.rstrip("/") + "/chat/completions"
-    code, body = _post_json(url, _openai_payload(provider, pid, messages, mtok, temperature, False),
-                            _openai_headers(provider, key), timeout)
+    code, body, hdrs = _post_json(url, _openai_payload(provider, pid, messages, mtok, temperature, False),
+                                  _openai_headers(provider, key), timeout)
     if code != 200:
-        return {"ok": False, "code": code, "error": body[:300]}
+        return {"ok": False, "code": code, "error": body[:300], "headers": hdrs}
     try:
         data = json.loads(body)
         msg = data["choices"][0]["message"]
@@ -345,18 +520,18 @@ def _call_once(provider: str, pid: str, messages: list[dict], mtok: int,
                           "total_tokens": pt + ct},
                 "model": data.get("model", pid)}
     except Exception as e:
-        return {"ok": False, "code": code, "error": f"unparseable: {e}"}
+        return {"ok": False, "code": code, "error": f"unparseable: {e}", "headers": hdrs}
 
 
 def _call_anthropic(pid: str, messages: list[dict], mtok: int,
                     temperature: float, key: str, timeout: float) -> dict:
     body, version = _anthropic_payload(pid, messages, mtok, temperature, False)
-    code, text = _post_json("https://api.anthropic.com/v1/messages", body,
-                            {"Content-Type": "application/json", "x-api-key": key,
-                             "anthropic-version": version,
-                             "User-Agent": "kimi-super-agent/1.0"}, timeout)
+    code, text, hdrs = _post_json("https://api.anthropic.com/v1/messages", body,
+                                  {"Content-Type": "application/json", "x-api-key": key,
+                                   "anthropic-version": version,
+                                   "User-Agent": "kimi-super-agent/1.0"}, timeout)
     if code != 200:
-        return {"ok": False, "code": code, "error": text[:300]}
+        return {"ok": False, "code": code, "error": text[:300], "headers": hdrs}
     try:
         data = json.loads(text)
         content = "".join(b.get("text", "") for b in data.get("content", [])
@@ -400,7 +575,7 @@ async def smart_chat_stream(messages: list[dict], model: str,
             yield "data: [DONE]\n\n"
             return
         except Exception as e:  # noqa: BLE001
-            last_err = f"{provider}: {type(e).__name__}: {str(e)[:150]}"
+            last_err = f"{provider}: {redact(type(e).__name__)}: {redact(str(e))[:150]}"
             circuit_note(provider, False)
             record_usage(provider, error=True)
             continue
